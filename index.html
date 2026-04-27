@@ -710,6 +710,7 @@ body {
 /* ── PROJECTS PAGE ── */
 #page-projects { display: none; }
 #page-calendar { display: none; }
+.page-hidden { display: none !important; }
 .desktop-cal-sidebar { display: none; }
 
 .project-card {
@@ -1106,10 +1107,14 @@ body {
 /* ── DESKTOP LAYOUT ── */
 @media (min-width: 900px) {
   .desktop-grid {
-    display: grid !important;
+    display: grid;
     grid-template-columns: 300px 1fr;
     grid-template-rows: auto auto 1fr;
     min-height: calc(100vh - 56px - 72px);
+  }
+
+  .desktop-grid.page-hidden {
+    display: none !important;
   }
 
   .quote-banner {
@@ -1211,7 +1216,7 @@ body {
   </div>
 
   <!-- TODAY PAGE -->
-  <div id="page-today" style="display:none">
+  <div id="page-today" class="page-hidden">
     <div class="quote-banner" id="quote-banner" title="Click for new quote">
       <div class="quote-text" id="quote-text"></div>
       <div class="quote-author" id="quote-author"></div>
@@ -1540,21 +1545,22 @@ function switchPage(page) {
   var projectsEl = document.getElementById('page-projects');
   var calEl = document.getElementById('page-calendar');
 
-  // Hide all
-  todayEl.style.display = 'none';
-  todayEl.classList.remove('desktop-grid');
-  projectsEl.style.display = 'none';
-  calEl.style.display = 'none';
-
-  // Show selected
-  if (page === 'today') {
-    todayEl.style.display = 'block';
-    if (isDesktop) todayEl.classList.add('desktop-grid');
-  } else if (page === 'projects') {
-    projectsEl.style.display = 'block';
-  } else if (page === 'calendar') {
-    calEl.style.display = 'block';
+  // Handle today page with class approach on desktop
+  if (isDesktop) {
+    todayEl.style.display = '';
+    if (page === 'today') {
+      todayEl.classList.add('desktop-grid');
+      todayEl.classList.remove('page-hidden');
+    } else {
+      todayEl.classList.add('page-hidden');
+    }
+  } else {
+    todayEl.classList.remove('desktop-grid', 'page-hidden');
+    todayEl.style.display = page === 'today' ? 'block' : 'none';
   }
+
+  projectsEl.style.display = page === 'projects' ? 'block' : 'none';
+  calEl.style.display = page === 'calendar' ? 'block' : 'none';
 
   document.getElementById('nav-today').classList.toggle('active', page === 'today');
   document.getElementById('nav-projects').classList.toggle('active', page === 'projects');
@@ -1577,16 +1583,21 @@ auth.onAuthStateChanged(user => {
     document.getElementById('page-projects').style.display = 'none';
     document.getElementById('page-calendar').style.display = 'none';
     var todayEl = document.getElementById('page-today');
-    todayEl.style.display = 'block';
-    if (window.innerWidth >= 900) todayEl.classList.add('desktop-grid');
+    todayEl.style.display = '';
+    if (window.innerWidth >= 900) {
+      todayEl.classList.add('desktop-grid');
+      todayEl.classList.remove('page-hidden');
+    } else {
+      todayEl.style.display = 'block';
+    }
     initUI();
     loadTasks(user.uid);
     loadProjects(user.uid);
   } else {
     document.getElementById('auth-screen').style.display = 'flex';
     document.getElementById('app-screen').style.display = 'none';
-    document.getElementById('page-today').style.display = 'none';
-    document.getElementById('page-today').classList.remove('desktop-grid');
+    var todayEl = document.getElementById('page-today');
+    todayEl.classList.add('page-hidden');
   }
 });
 
