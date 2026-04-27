@@ -1104,7 +1104,7 @@ body {
 /* ── DESKTOP LAYOUT ── */
 @media (min-width: 900px) {
   #page-today {
-    display: grid !important;
+    display: grid;
     grid-template-columns: 300px 1fr;
     grid-template-rows: auto auto 1fr;
     min-height: calc(100vh - 56px - 72px);
@@ -1136,6 +1136,10 @@ body {
     grid-row: 3 / 4;
     max-width: 100%;
     padding: 16px 20px;
+  }
+
+  #page-projects, #page-calendar {
+    display: block !important;
   }
 }
 
@@ -1329,9 +1333,9 @@ body {
 </div>
 
 <!-- Firebase compat SDK -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script>
 const firebaseConfig = {
   apiKey: "AIzaSyCbWLU1KSBo4kbyZmbm5YYRrBIFVRdhcKA",
@@ -1530,14 +1534,20 @@ window.selectColor = (c) => {
 // ── NAV ──
 function switchPage(page) {
   const isDesktop = window.innerWidth >= 900;
-  document.getElementById('page-today').style.display = page === 'today' ? (isDesktop ? 'grid' : 'block') : 'none';
-  document.getElementById('page-projects').style.display = page === 'projects' ? 'block' : 'none';
-  document.getElementById('page-calendar').style.display = page === 'calendar' ? 'block' : 'none';
+  const todayEl = document.getElementById('page-today');
+  const projectsEl = document.getElementById('page-projects');
+  const calEl = document.getElementById('page-calendar');
+
+  todayEl.style.display = page === 'today' ? (isDesktop ? 'grid' : 'block') : 'none';
+  projectsEl.style.display = page === 'projects' ? 'block' : 'none';
+  calEl.style.display = page === 'calendar' ? 'block' : 'none';
+
   document.getElementById('nav-today').classList.toggle('active', page === 'today');
   document.getElementById('nav-projects').classList.toggle('active', page === 'projects');
   document.getElementById('nav-calendar').classList.toggle('active', page === 'calendar');
+
   if (page === 'calendar') renderCalendar();
-  if (page === 'projects' && projectsCache.length > 0) renderProjects(projectsCache);
+  if (page === 'projects') renderProjects(projectsCache);
 }
 window.switchPage = switchPage;
 
