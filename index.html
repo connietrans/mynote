@@ -1328,12 +1328,11 @@ body {
   </nav>
 </div>
 
-<!-- Firebase SDK -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, query, where, onSnapshot, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
+<!-- Firebase compat SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
 const firebaseConfig = {
   apiKey: "AIzaSyCbWLU1KSBo4kbyZmbm5YYRrBIFVRdhcKA",
   authDomain: "my-sticky-note-41d09.firebaseapp.com",
@@ -1343,9 +1342,63 @@ const firebaseConfig = {
   appId: "1:268614104190:web:cb3ed752dfe6ad9e6a542f"
 };
 
-const fbApp = initializeApp(firebaseConfig);
-const auth = getAuth(fbApp);
-const db = getFirestore(fbApp);
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// ── compat helpers ──
+const collection = (db, name) => db.collection(name);
+const addDoc = (ref, data) => ref.add(data);
+const updateDoc = (ref, data) => ref.update(data);
+const deleteDoc = (ref) => ref.delete();
+const doc = (db, col, id) => db.collection(col).doc(id);
+const where = (f, op, v) => ({ field: f, op, value: v });
+const serverTimestamp = () => firebase.firestore.FieldValue.serverTimestamp();
+const orderBy = (f, d) => ({ field: f, dir: d });
+
+function query(colRef, ...constraints) { return { colRef, constraints }; }
+
+function onSnapshot(q, cb) {
+  let ref = q.colRef;
+  if (q.constraints) {
+    q.constraints.forEach(c => {
+      if (c.field && c.op) ref = ref.where(c.field, c.op, c.value);
+    });
+  }
+  return ref.onSnapshot(snap => {
+    snap.docs; // exists
+    cb({ docs: snap.docs.map(d => ({ id: d.id, data: () => d.data(), exists: d.exists })) });
+  });
+}
+
+// Patch onSnapshot calls to work with compat
+function loadTasks(uid) {
+  db.collection('tasks').where('uid', '==', uid).onSnapshot(async snap => {
+    const today = todayStr();
+    const tasks = [];
+    for (const ds of snap.docs) {
+      const d = { id: ds.id, ...ds.data() };
+      if (d.type === 'repeat' && d.done && shouldResetRepeat(d, today)) {
+        const next = calcNextDue(d.period, d.nextDue || today);
+        await db.collection('tasks').doc(d.id).update({ done: false, nextDue: next });
+        d.done = false; d.nextDue = next;
+      }
+      tasks.push(d);
+    }
+    allTasksCache = tasks;
+    renderTasks(tasks, today);
+    if (document.getElementById('page-calendar').style.display === 'block') renderCalendar();
+    if (calSelectedDate) renderCalDayPanel(calSelectedDate);
+    if (document.getElementById('desktop-cal-sidebar')) renderDesktopCal();
+  });
+}
+
+function loadProjects(uid) {
+  db.collection('projects').where('uid', '==', uid).onSnapshot(snap => {
+    projectsCache = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=>(a.order||0)-(b.order||0));
+    renderProjects(projectsCache);
+  });
+}
 
 // ── QUOTES ──
 const ALL_QUOTES = [
@@ -1493,7 +1546,7 @@ document.querySelectorAll('.nav-item[data-page]').forEach(btn => {
 });
 
 // ── AUTH ──
-onAuthStateChanged(auth, user => {
+auth.onAuthStateChanged(user => {
   if (user) {
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app-screen').style.display = 'block';
@@ -1508,16 +1561,16 @@ onAuthStateChanged(auth, user => {
   }
 });
 
-window.signIn = async () => {
+function signIn() {
   const email = document.getElementById('auth-email').value.trim();
   const pw = document.getElementById('auth-password').value;
   const err = document.getElementById('auth-error');
   err.style.display = 'none';
-  try { await signInWithEmailAndPassword(auth, email, pw); }
-  catch { err.textContent = 'Invalid email or password.'; err.style.display = 'block'; }
-};
+  auth.signInWithEmailAndPassword(email, pw)
+    .catch(() => { err.textContent = 'Invalid email or password.'; err.style.display = 'block'; });
+}
 
-window.signOut = async () => { await fbSignOut(auth); };
+function signOut() { auth.signOut(); }
 
 // Wire static buttons
 document.getElementById('btn-signin').addEventListener('click', () => window.signIn());
@@ -1546,42 +1599,18 @@ window.handleTypeChange = () => {
 };
 
 // ── ADD TASK ──
-window.addTask = async () => {
+async function addTask() {
   const text = document.getElementById('new-task-text').value.trim();
   if (!text) return;
   const type = document.getElementById('new-task-type').value;
   const user = auth.currentUser;
   if (!user) return;
   const today = todayStr();
-  const data = { uid: user.uid, text, type, done: false, subtasks: [], order: Date.now(), createdAt: serverTimestamp() };
+  const data = { uid: user.uid, text, type, done: false, subtasks: [], order: Date.now(), createdAt: firebase.firestore.FieldValue.serverTimestamp() };
   if (type === 'today') data.date = document.getElementById('new-task-date').value || today;
   if (type === 'repeat') { data.period = document.getElementById('new-repeat-period').value; data.nextDue = today; }
-  await addDoc(collection(db, 'tasks'), data);
+  await db.collection('tasks').add(data);
   document.getElementById('new-task-text').value = '';
-};
-
-// ── LOAD TASKS ──
-function loadTasks(uid) {
-  const q = query(collection(db, 'tasks'), where('uid', '==', uid));
-  onSnapshot(q, async snap => {
-    const today = todayStr();
-    const tasks = [];
-    for (const ds of snap.docs) {
-      const d = { id: ds.id, ...ds.data() };
-      // reset repeat tasks when new period starts
-      if (d.type === 'repeat' && d.done && shouldResetRepeat(d, today)) {
-        const next = calcNextDue(d.period, d.nextDue || today);
-        await updateDoc(doc(db, 'tasks', d.id), { done: false, nextDue: next });
-        d.done = false; d.nextDue = next;
-      }
-      tasks.push(d);
-    }
-    allTasksCache = tasks;
-    renderTasks(tasks, today);
-    if (document.getElementById('page-calendar').style.display === 'block') renderCalendar();
-    if (calSelectedDate) renderCalDayPanel(calSelectedDate);
-    if (document.getElementById('desktop-cal-sidebar')) renderDesktopCal();
-  });
 }
 
 function shouldResetRepeat(t, today) {
@@ -1704,66 +1733,63 @@ function renderTask(t, today) {
 function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // ── TASK ACTIONS ──
-window.toggleDone = async (id, cur) => { await updateDoc(doc(db,'tasks',id), { done: !cur }); };
-window.deleteTask = async (id) => { await deleteDoc(doc(db,'tasks',id)); };
+function toggleDone(id, cur) { db.collection('tasks').doc(id).update({ done: !cur }); }
+function deleteTask(id) { db.collection('tasks').doc(id).delete(); }
 
-window.toggleEdit = (id) => {
+function toggleEdit(id) {
   const row = document.getElementById('edit-'+id);
   row.classList.toggle('open');
   if (row.classList.contains('open')) document.getElementById('edit-input-'+id).focus();
-};
+}
 
-window.saveEdit = async (id) => {
+async function saveEdit(id) {
   const val = document.getElementById('edit-input-'+id).value.trim();
   if (!val) return;
-  await updateDoc(doc(db,'tasks',id), { text: val });
-};
+  await db.collection('tasks').doc(id).update({ text: val });
+}
 
-window.toggleReschedule = (id) => { document.getElementById('reschedule-'+id).classList.toggle('open'); };
-window.reschedule = async (id) => {
+function toggleReschedule(id) { document.getElementById('reschedule-'+id).classList.toggle('open'); }
+async function reschedule(id) {
   const d = document.getElementById('reschedule-date-'+id).value;
   if (!d) return;
-  await updateDoc(doc(db,'tasks',id), { date: d, done: false });
+  await db.collection('tasks').doc(id).update({ date: d, done: false });
   document.getElementById('reschedule-'+id).classList.remove('open');
-};
+}
 
-window.toggleSubArea = (id) => { document.getElementById('subarea-'+id).classList.toggle('open'); };
+function toggleSubArea(id) { document.getElementById('subarea-'+id).classList.toggle('open'); }
 
-window.addSubtask = async (id) => {
+async function addSubtask(id) {
   const inp = document.getElementById('subinput-'+id);
   const text = inp.value.trim();
   if (!text) return;
-  const ref = doc(db,'tasks',id);
-  // Get current subtasks from rendered state
   const card = document.getElementById('card-'+id);
   const checks = card.querySelectorAll('.subtask-check');
   const texts = card.querySelectorAll('.subtask-text');
   const subs = [];
   checks.forEach((c,i) => subs.push({ text: texts[i].textContent, done: c.classList.contains('checked') }));
   subs.push({ text, done: false });
-  await updateDoc(ref, { subtasks: subs });
+  await db.collection('tasks').doc(id).update({ subtasks: subs });
   inp.value = '';
-};
+}
 
-window.toggleSubtask = async (id, idx) => {
+async function toggleSubtask(id, idx) {
   const card = document.getElementById('card-'+id);
   const checks = card.querySelectorAll('.subtask-check');
   const texts = card.querySelectorAll('.subtask-text');
   const subs = [];
   checks.forEach((c,i) => subs.push({ text: texts[i].textContent, done: i === idx ? !c.classList.contains('checked') : c.classList.contains('checked') }));
-  await updateDoc(doc(db,'tasks',id), { subtasks: subs });
-};
+  await db.collection('tasks').doc(id).update({ subtasks: subs });
+}
 
-window.deleteSubtask = async (id, idx) => {
+async function deleteSubtask(id, idx) {
   const card = document.getElementById('card-'+id);
   const checks = card.querySelectorAll('.subtask-check');
   const texts = card.querySelectorAll('.subtask-text');
   const subs = [];
   checks.forEach((c,i) => { if(i !== idx) subs.push({ text: texts[i].textContent, done: c.classList.contains('checked') }); });
-  await updateDoc(doc(db,'tasks',id), { subtasks: subs });
-};
+  await db.collection('tasks').doc(id).update({ subtasks: subs });
+}
 
-// ── DRAG & DROP TASKS ──
 function initDragTasks(tasks) {
   let dragId = null;
   document.querySelectorAll('#sortable-tasks .task-card').forEach(card => {
@@ -1775,14 +1801,13 @@ function initDragTasks(tasks) {
       e.preventDefault();
       card.classList.remove('drag-over');
       if (!dragId || dragId === card.dataset.id) return;
-      // reorder
       const allCards = [...document.querySelectorAll('#sortable-tasks .task-card')];
       const fromIdx = allCards.findIndex(c => c.dataset.id === dragId);
       const toIdx = allCards.findIndex(c => c.dataset.id === card.dataset.id);
       const ordered = [...allCards.map(c => c.dataset.id)];
       ordered.splice(fromIdx, 1); ordered.splice(toIdx, 0, dragId);
       for (let i = 0; i < ordered.length; i++) {
-        await updateDoc(doc(db,'tasks',ordered[i]), { order: i * 10 });
+        await db.collection('tasks').doc(ordered[i]).update({ order: i * 10 });
       }
     });
   });
@@ -1796,17 +1821,9 @@ window.addProject = async () => {
   if (!name) return;
   const user = auth.currentUser;
   if (!user) return;
-  await addDoc(collection(db,'projects'), { uid: user.uid, name, color: selectedProjectColor, tasks: [], order: Date.now(), createdAt: serverTimestamp() });
+  await db.collection('projects').add( { uid: user.uid, name, color: selectedProjectColor, tasks: [], order: Date.now(), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
   document.getElementById('new-project-name').value = '';
 };
-
-function loadProjects(uid) {
-  const q = query(collection(db,'projects'), where('uid','==',uid));
-  onSnapshot(q, snap => {
-    projectsCache = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=>(a.order||0)-(b.order||0));
-    renderProjects(projectsCache);
-  });
-}
 
 function renderProjects(projects) {
   const container = document.getElementById('project-list-container');
@@ -1881,7 +1898,7 @@ function renderProject(p) {
 }
 
 window.toggleProject = (id) => { document.getElementById('proj-card-'+id).classList.toggle('open'); };
-window.deleteProject = async (id) => { await deleteDoc(doc(db,'projects',id)); };
+window.deleteProject = async (id) => { await db.collection('projects').doc(id).delete(); };
 
 window.addProjTask = async (pid) => {
   const inp = document.getElementById('proj-task-input-'+pid);
@@ -1890,7 +1907,7 @@ window.addProjTask = async (pid) => {
   const p = projectsCache.find(x=>x.id===pid);
   if (!p) return;
   const tasks = [...(p.tasks||[]), { text, done: false, subtasks: [] }];
-  await updateDoc(doc(db,'projects',pid), { tasks });
+  await db.collection('projects').doc(pid).update( { tasks });
   inp.value = '';
 };
 
@@ -1899,14 +1916,14 @@ window.toggleProjTask = async (pid, ti) => {
   if (!p) return;
   const tasks = JSON.parse(JSON.stringify(p.tasks||[]));
   tasks[ti].done = !tasks[ti].done;
-  await updateDoc(doc(db,'projects',pid), { tasks });
+  await db.collection('projects').doc(pid).update( { tasks });
 };
 
 window.deleteProjTask = async (pid, ti) => {
   const p = projectsCache.find(x=>x.id===pid);
   if (!p) return;
   const tasks = (p.tasks||[]).filter((_,i)=>i!==ti);
-  await updateDoc(doc(db,'projects',pid), { tasks });
+  await db.collection('projects').doc(pid).update( { tasks });
 };
 
 window.toggleProjEdit = (pid, ti) => {
@@ -1922,7 +1939,7 @@ window.saveProjEdit = async (pid, ti) => {
   if (!p) return;
   const tasks = JSON.parse(JSON.stringify(p.tasks||[]));
   tasks[ti].text = val;
-  await updateDoc(doc(db,'projects',pid), { tasks });
+  await db.collection('projects').doc(pid).update( { tasks });
 };
 
 window.toggleProjSubArea = (pid, ti) => {
@@ -1938,7 +1955,7 @@ window.addProjSubtask = async (pid, ti) => {
   const tasks = JSON.parse(JSON.stringify(p.tasks||[]));
   if (!tasks[ti].subtasks) tasks[ti].subtasks = [];
   tasks[ti].subtasks.push({ text, done: false });
-  await updateDoc(doc(db,'projects',pid), { tasks });
+  await db.collection('projects').doc(pid).update( { tasks });
   inp.value = '';
 };
 
@@ -1947,7 +1964,7 @@ window.toggleProjSubtask = async (pid, ti, si) => {
   if (!p) return;
   const tasks = JSON.parse(JSON.stringify(p.tasks||[]));
   tasks[ti].subtasks[si].done = !tasks[ti].subtasks[si].done;
-  await updateDoc(doc(db,'projects',pid), { tasks });
+  await db.collection('projects').doc(pid).update( { tasks });
 };
 
 window.deleteProjSubtask = async (pid, ti, si) => {
@@ -1955,7 +1972,7 @@ window.deleteProjSubtask = async (pid, ti, si) => {
   if (!p) return;
   const tasks = JSON.parse(JSON.stringify(p.tasks||[]));
   tasks[ti].subtasks.splice(si, 1);
-  await updateDoc(doc(db,'projects',pid), { tasks });
+  await db.collection('projects').doc(pid).update( { tasks });
 };
 
 // ── DRAG PROJECT TASKS ──
@@ -2000,7 +2017,7 @@ document.addEventListener('drop', async e => {
   const tasks = JSON.parse(JSON.stringify(p.tasks||[]));
   const [moved] = tasks.splice(fromIdx, 1);
   tasks.splice(toIdx, 0, moved);
-  await updateDoc(doc(db,'projects',pid), { tasks });
+  await db.collection('projects').doc(pid).update( { tasks });
 });
 
 // ── CALENDAR ──
@@ -2106,9 +2123,9 @@ window.calAddTask = async () => {
   if (!text) return;
   const user = auth.currentUser;
   if (!user) return;
-  await addDoc(collection(db, 'tasks'), {
+  await db.collection('tasks').add( {
     uid: user.uid, text, type: 'today', date: calSelectedDate,
-    done: false, subtasks: [], order: Date.now(), createdAt: serverTimestamp()
+    done: false, subtasks: [], order: Date.now(), createdAt: firebase.firestore.FieldValue.serverTimestamp()
   });
   inp.value = '';
 };
@@ -2285,7 +2302,7 @@ window.desktopCalAdd = async (ds) => {
   if (!text) return;
   const user = auth.currentUser;
   if (!user) return;
-  await addDoc(collection(db,'tasks'), { uid: user.uid, text, type: 'today', date: ds, done: false, subtasks: [], order: Date.now(), createdAt: serverTimestamp() });
+  await db.collection('tasks').add( { uid: user.uid, text, type: 'today', date: ds, done: false, subtasks: [], order: Date.now(), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
   inp.value = '';
 };
 
@@ -2303,7 +2320,7 @@ window.dropPlanTask = async (e, dateStr) => {
   const user = auth.currentUser;
   if (!user) return;
   // Add as today task on that date
-  await addDoc(collection(db,'tasks'), { uid: user.uid, text: taskText, type: 'today', date: dateStr, done: false, subtasks: [], order: Date.now(), createdAt: serverTimestamp() });
+  await db.collection('tasks').add( { uid: user.uid, text: taskText, type: 'today', date: dateStr, done: false, subtasks: [], order: Date.now(), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
 };
 
 handleTypeChange();
