@@ -1105,8 +1105,8 @@ body {
 
 /* ── DESKTOP LAYOUT ── */
 @media (min-width: 900px) {
-  #page-today {
-    display: grid;
+  .desktop-grid {
+    display: grid !important;
     grid-template-columns: 300px 1fr;
     grid-template-rows: auto auto 1fr;
     min-height: calc(100vh - 56px - 72px);
@@ -1141,8 +1141,8 @@ body {
     padding: 16px 20px;
   }
 
-  #page-projects, #page-calendar {
-    display: block !important;
+  #page-today.hidden {
+    display: none !important;
   }
 }
 
@@ -1535,14 +1535,26 @@ window.selectColor = (c) => {
 
 // ── NAV ──
 function switchPage(page) {
-  const isDesktop = window.innerWidth >= 900;
-  const todayEl = document.getElementById('page-today');
-  const projectsEl = document.getElementById('page-projects');
-  const calEl = document.getElementById('page-calendar');
+  var isDesktop = window.innerWidth >= 900;
+  var todayEl = document.getElementById('page-today');
+  var projectsEl = document.getElementById('page-projects');
+  var calEl = document.getElementById('page-calendar');
 
-  todayEl.style.display = page === 'today' ? (isDesktop ? 'grid' : 'block') : 'none';
-  projectsEl.style.display = page === 'projects' ? 'block' : 'none';
-  calEl.style.display = page === 'calendar' ? 'block' : 'none';
+  // Hide all
+  todayEl.style.display = 'none';
+  todayEl.classList.remove('desktop-grid');
+  projectsEl.style.display = 'none';
+  calEl.style.display = 'none';
+
+  // Show selected
+  if (page === 'today') {
+    todayEl.style.display = 'block';
+    if (isDesktop) todayEl.classList.add('desktop-grid');
+  } else if (page === 'projects') {
+    projectsEl.style.display = 'block';
+  } else if (page === 'calendar') {
+    calEl.style.display = 'block';
+  }
 
   document.getElementById('nav-today').classList.toggle('active', page === 'today');
   document.getElementById('nav-projects').classList.toggle('active', page === 'projects');
@@ -1564,8 +1576,9 @@ auth.onAuthStateChanged(user => {
     document.getElementById('app-screen').style.display = 'block';
     document.getElementById('page-projects').style.display = 'none';
     document.getElementById('page-calendar').style.display = 'none';
-    var isDesktop = window.innerWidth >= 900;
-    document.getElementById('page-today').style.display = isDesktop ? 'grid' : 'block';
+    var todayEl = document.getElementById('page-today');
+    todayEl.style.display = 'block';
+    if (window.innerWidth >= 900) todayEl.classList.add('desktop-grid');
     initUI();
     loadTasks(user.uid);
     loadProjects(user.uid);
@@ -1573,6 +1586,7 @@ auth.onAuthStateChanged(user => {
     document.getElementById('auth-screen').style.display = 'flex';
     document.getElementById('app-screen').style.display = 'none';
     document.getElementById('page-today').style.display = 'none';
+    document.getElementById('page-today').classList.remove('desktop-grid');
   }
 });
 
