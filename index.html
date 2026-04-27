@@ -1560,7 +1560,9 @@ auth.onAuthStateChanged(user => {
   if (user) {
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app-screen').style.display = 'block';
-    const isDesktop = window.innerWidth >= 900;
+    document.getElementById('page-projects').style.display = 'none';
+    document.getElementById('page-calendar').style.display = 'none';
+    var isDesktop = window.innerWidth >= 900;
     document.getElementById('page-today').style.display = isDesktop ? 'grid' : 'block';
     initUI();
     loadTasks(user.uid);
@@ -1568,6 +1570,7 @@ auth.onAuthStateChanged(user => {
   } else {
     document.getElementById('auth-screen').style.display = 'flex';
     document.getElementById('app-screen').style.display = 'none';
+    document.getElementById('page-today').style.display = 'none';
   }
 });
 
