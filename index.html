@@ -1584,9 +1584,9 @@ auth.onAuthStateChanged(user => {
     document.getElementById('page-calendar').style.display = 'none';
     var todayEl = document.getElementById('page-today');
     todayEl.style.display = '';
+    todayEl.classList.remove('page-hidden');
     if (window.innerWidth >= 900) {
       todayEl.classList.add('desktop-grid');
-      todayEl.classList.remove('page-hidden');
     } else {
       todayEl.style.display = 'block';
     }
